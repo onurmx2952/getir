@@ -804,6 +804,19 @@ function closeOrderPage() {
   els.searchResults.innerHTML = "";
 }
 
+function activateOnTouch(element, handler) {
+  if (element._tapClickHandler) element.removeEventListener("click", element._tapClickHandler);
+  if (element._tapTouchHandler) element.removeEventListener("touchend", element._tapTouchHandler);
+  element._tapClickHandler = handler;
+  element._tapTouchHandler = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handler(event);
+  };
+  element.addEventListener("click", element._tapClickHandler);
+  element.addEventListener("touchend", element._tapTouchHandler, { passive: false });
+}
+
 function openOrderPage(id) {
   state.selectedOrderId = id;
   els.orderOverlay.hidden = false;
@@ -847,7 +860,7 @@ function renderSearchResults() {
       <span><strong>${product.name}</strong><small>${product.unit} · ${product.category} / ${product.subcategory || product.category}</small></span>
       <b>${product.priceText || `₺${product.price}`}</b>
     `;
-    button.addEventListener("click", () => {
+    activateOnTouch(button, () => {
       addProduct(order.id, product.id);
       els.productSearch.value = "";
       els.searchResults.hidden = true;
@@ -1190,7 +1203,7 @@ function renderOrderEditor() {
   els.prepareOrder.textContent = actionText;
 
   for (const chip of els.basketList.querySelectorAll("[data-remove-product]")) {
-    chip.addEventListener("click", () => removeProduct(order.id, chip.dataset.removeProduct));
+    activateOnTouch(chip, () => removeProduct(order.id, chip.dataset.removeProduct));
   }
 
   els.categoryTabs.innerHTML = "";
@@ -1200,7 +1213,7 @@ function renderOrderEditor() {
     button.type = "button";
     button.textContent = category;
     button.className = category === state.selectedCategory ? "active" : "";
-    button.addEventListener("click", () => {
+    activateOnTouch(button, () => {
       state.selectedCategory = category;
       state.selectedSubcategory = subcategoriesFor(category)[0];
       state.editorRenderKey = "";
@@ -1216,7 +1229,7 @@ function renderOrderEditor() {
     button.type = "button";
     button.textContent = subcategory;
     button.className = subcategory === state.selectedSubcategory ? "active" : "";
-    button.addEventListener("click", () => {
+    activateOnTouch(button, () => {
       state.selectedSubcategory = subcategory;
       state.editorRenderKey = "";
       renderOrderEditor();
@@ -1231,16 +1244,17 @@ function renderOrderEditor() {
     button.type = "button";
     button.innerHTML = `<img src="${product.image}" alt="" /><strong>${product.name}</strong><span>${product.unit} · ₺${product.price}</span>`;
     button.disabled = order.status !== "queued";
-    button.addEventListener("click", () => addProduct(order.id, product.id));
+    activateOnTouch(button, () => addProduct(order.id, product.id));
     grid.appendChild(button);
   }
   renderSearchResults();
 
   els.prepareOrder.disabled = order.status === "preparing" || order.status === "delivering";
-  els.prepareOrder.onclick = () => {
+  els.prepareOrder.onclick = null;
+  activateOnTouch(els.prepareOrder, () => {
     if (order.status === "ready") dispatchOrder(order.id);
     else startPreparing(order.id);
-  };
+  });
 }
 
 function renderCourierDetails() {
@@ -1288,6 +1302,25 @@ els.pauseGame.addEventListener("click", () => {
   els.pauseGame.textContent = state.paused ? "Devam" : "Duraklat";
 });
 els.closeOrderPage.addEventListener("click", closeOrderPage);
+els.closeOrderPage.addEventListener(
+  "touchend",
+  (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeOrderPage();
+  },
+  { passive: false },
+);
+document.querySelector(".order-page")?.addEventListener(
+  "touchstart",
+  (event) => {
+    event.stopPropagation();
+  },
+  { passive: true },
+);
+document.querySelector(".order-page")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+});
 els.orderOverlay.addEventListener("click", (event) => {
   if (event.target === els.orderOverlay) closeOrderPage();
 });
