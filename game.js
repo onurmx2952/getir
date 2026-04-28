@@ -1325,6 +1325,18 @@ els.orderOverlay.addEventListener("click", (event) => {
   if (event.target === els.orderOverlay) closeOrderPage();
 });
 els.productSearch.addEventListener("input", renderSearchResults);
+els.productSearch.addEventListener(
+  "touchstart",
+  (event) => {
+    event.stopPropagation();
+    els.productSearch.focus();
+  },
+  { passive: true },
+);
+els.productSearch.addEventListener("click", (event) => {
+  event.stopPropagation();
+  els.productSearch.focus();
+});
 els.productSearch.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.stopPropagation();

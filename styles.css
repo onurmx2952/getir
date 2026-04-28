@@ -571,6 +571,8 @@ button.ghost {
   z-index: 3000;
   padding: 18px;
   background: rgb(18 24 31 / 72%);
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .order-overlay[hidden] {
@@ -587,6 +589,8 @@ button.ghost {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 18px 70px rgb(0 0 0 / 28%);
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .order-page-head {
@@ -630,6 +634,7 @@ button.ghost {
 .ticket-panel .basket {
   overflow: auto;
   padding: 12px;
+  touch-action: pan-y;
 }
 
 .ticket-panel .basket {
@@ -660,6 +665,8 @@ button.ghost {
   position: relative;
   z-index: 3;
   padding-bottom: 10px;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .product-search input {
@@ -669,6 +676,10 @@ button.ghost {
   padding: 0 12px;
   background: white;
   font-size: 14px;
+  pointer-events: auto;
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .search-results {
@@ -686,6 +697,8 @@ button.ghost {
   padding: 8px;
   background: white;
   box-shadow: 0 12px 36px rgb(0 0 0 / 18%);
+  pointer-events: auto;
+  touch-action: pan-y;
 }
 
 .search-results[hidden] {
@@ -741,6 +754,7 @@ button.ghost {
   min-height: 0;
   overflow: auto;
   padding: 2px 4px 14px 0;
+  touch-action: pan-y;
 }
 
 .editor-message {
