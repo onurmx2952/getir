@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Depo Dağıtım Oyunu</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div class="brand">
+          <span class="brand-mark">D</span>
+          <div>
+            <h1>Depo Dağıtım</h1>
+            <p>OSM üstünde gerçek zamanlı mikro lojistik prototipi</p>
+          </div>
+        </div>
+
+        <div class="controls">
+          <label>
+            Bölge
+            <select id="regionSelect">
+              <option value="gop">Ankara GOP / Çankaya</option>
+              <option value="kizilay">Ankara Kızılay</option>
+              <option value="kadikoy">İstanbul Kadıköy</option>
+              <option value="besiktas">İstanbul Beşiktaş</option>
+              <option value="alsancak">İzmir Alsancak</option>
+            </select>
+          </label>
+          <label>
+            Kurye
+            <input id="courierCount" type="number" min="1" max="12" value="3" />
+          </label>
+          <button id="startGame" type="button">Başlat</button>
+          <button id="pauseGame" class="ghost" type="button">Duraklat</button>
+        </div>
+      </section>
+
+      <section class="game">
+        <aside class="panel left-panel">
+          <div class="metrics">
+            <div>
+              <span>Para</span>
+              <strong id="money">₺0</strong>
+            </div>
+            <div>
+              <span>Puan</span>
+              <strong id="rating">100</strong>
+            </div>
+            <div>
+              <span>Sipariş</span>
+              <strong id="delivered">0</strong>
+            </div>
+            <div>
+              <span>Kaçan</span>
+              <strong id="missed">0</strong>
+            </div>
+          </div>
+
+          <div class="section-head">
+            <h2>Siparişler</h2>
+            <span id="orderCount">0</span>
+          </div>
+          <div id="orderEditor" class="order-editor empty-state">Sipariş kartına tıklayıp ayrı toplama ekranını aç.</div>
+          <div id="orders" class="list empty-state">Oyun başlayınca siparişler haritada belirecek.</div>
+        </aside>
+
+        <div id="map"></div>
+
+        <aside class="panel right-panel">
+          <div class="section-head">
+            <h2>Kurye</h2>
+            <span id="courierState">Seçilmedi</span>
+          </div>
+          <div id="courierDetails" class="details empty-state">Haritadaki kuryeye tıkla.</div>
+
+          <div class="section-head depot-title">
+            <h2>Depo</h2>
+            <span id="prepSlots">0/0</span>
+          </div>
+          <div id="prepList" class="list small empty-state">Hazırlanan sipariş yok.</div>
+        </aside>
+      </section>
+    </main>
+
+    <section id="orderOverlay" class="order-overlay" hidden>
+      <div class="order-page">
+        <header class="order-page-head">
+          <div>
+            <span class="eyebrow">Sipariş Toplama</span>
+            <h2 id="orderPageTitle">Sipariş</h2>
+            <p id="orderPageMeta"></p>
+          </div>
+          <button id="closeOrderPage" class="ghost" type="button">Kapat</button>
+        </header>
+
+        <aside class="ticket-panel">
+          <div class="section-head">
+            <h2>Müşteri Fişi</h2>
+            <span id="ticketProgress">0/0</span>
+          </div>
+          <ol id="ticketList" class="ticket-list"></ol>
+          <div class="section-head">
+            <h2>Sepet</h2>
+            <span id="basketValue">₺0</span>
+          </div>
+          <div id="basketList" class="basket"></div>
+          <div id="orderPageMessage" class="editor-message"></div>
+          <button id="prepareOrder" type="button">Fişi tamamla</button>
+        </aside>
+
+        <section class="shelf-panel">
+          <div class="product-search">
+            <input id="productSearch" type="search" placeholder="Ürün ara" autocomplete="off" />
+            <div id="searchResults" class="search-results" hidden></div>
+          </div>
+          <div id="categoryTabs" class="category-tabs"></div>
+          <div id="subcategoryTabs" class="subcategory-tabs"></div>
+          <div id="productGrid" class="product-grid"></div>
+        </section>
+      </div>
+    </section>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="./getir_catalog.js" charset="UTF-8"></script>
+    <script src="./game.js"></script>
+  </body>
+</html>
