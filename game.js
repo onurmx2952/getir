@@ -82,8 +82,8 @@ const routing = {
 
 const routePalette = ["#0f7bff", "#ef476f", "#00a896", "#f77f00", "#7c5cc4", "#118ab2", "#2d6a4f", "#d00000", "#5f0f40", "#3a86ff", "#6a994e", "#9d4edd"];
 const orderSpawn = {
-  minDelay: 5000,
-  maxDelay: 60000,
+  minDelay: 60000,
+  maxDelay: 300000,
   maxActive: 6,
 };
 
@@ -323,7 +323,7 @@ function startGame() {
   state.missed = 0;
   state.orderSeq = 1;
   state.lastOrderAt = performance.now();
-  scheduleNextOrder(state.lastOrderAt);
+  state.nextOrderAt = state.lastOrderAt;
   state.prevTime = null;
   els.pauseGame.textContent = "Duraklat";
 
@@ -409,7 +409,35 @@ function spawnOrder() {
   const marker = L.marker(destination, { icon: orderIcon(order) })
     .addTo(map)
     .bindTooltip(`${order.id} · Fiş hazırlanacak`)
-    .on("click", () => selectOrder(order.id));
+    .on("click touchstart", (event) => {
+      L.DomEvent.stop(event);
+      selectOrder(order.id);
+    });
+  marker.on("add", () => {
+    const element = marker.getElement();
+    if (!element) return;
+    element.addEventListener(
+      "touchstart",
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectOrder(order.id);
+      },
+      { passive: false },
+    );
+  });
+  const markerElement = marker.getElement();
+  if (markerElement) {
+    markerElement.addEventListener(
+      "touchstart",
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectOrder(order.id);
+      },
+      { passive: false },
+    );
+  }
   state.markers.set(order.id, marker);
   hydrateOrderAddress(order);
 }
@@ -645,7 +673,7 @@ async function requestRoute(url, mode) {
 }
 
 function maybeAddIllegalShortcut(route) {
-  if (route.path.length < 5 || Math.random() > 0.32) return route;
+  if (route.path.length < 5 || Math.random() > 0.82) return route;
   const fromIndex = Math.floor(randomBetween(1, Math.max(2, route.path.length - 4)));
   const toIndex = Math.min(route.path.length - 2, fromIndex + Math.floor(randomBetween(2, 5)));
   const from = route.path[fromIndex];
