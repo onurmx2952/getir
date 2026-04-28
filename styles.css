@@ -141,6 +141,12 @@ button.ghost {
   color: var(--ink);
 }
 
+button.active {
+  border-color: var(--accent);
+  background: #e5f6f1;
+  color: var(--accent-dark);
+}
+
 .game {
   display: grid;
   grid-template-columns: 430px minmax(520px, 1fr) 310px;
@@ -157,6 +163,10 @@ button.ghost {
   min-height: 0;
   overflow: hidden;
   background: #d7e0df;
+}
+
+#map.selecting-area {
+  cursor: crosshair;
 }
 
 .leaflet-container {

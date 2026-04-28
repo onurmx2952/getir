@@ -50,6 +50,7 @@ const state = {
   running: false,
   paused: false,
   region: regions.gop,
+  customRegion: null,
   depot: null,
   couriers: [],
   orders: [],
@@ -57,6 +58,9 @@ const state = {
   markers: new Map(),
   routes: new Map(),
   regionLayer: null,
+  selectionLayer: null,
+  selectingArea: false,
+  selectionStart: null,
   selectedOrderId: null,
   editorMessage: "",
   editorRenderKey: "",
@@ -70,6 +74,7 @@ const state = {
   orderSeq: 1,
   lastOrderAt: 0,
   nextOrderAt: 0,
+  rushUntil: 0,
   prepSlots: 2,
   addressCache: new Map(),
 };
@@ -82,15 +87,22 @@ const routing = {
 
 const routePalette = ["#0f7bff", "#ef476f", "#00a896", "#f77f00", "#7c5cc4", "#118ab2", "#2d6a4f", "#d00000", "#5f0f40", "#3a86ff", "#6a994e", "#9d4edd"];
 const orderSpawn = {
-  minDelay: 60000,
-  maxDelay: 300000,
+  normalMinDelay: 60000,
+  normalMaxDelay: 300000,
+  rushMinDelay: 12000,
+  rushMaxDelay: 45000,
+  rushChance: 0.22,
+  minRushDuration: 120000,
+  maxRushDuration: 260000,
   maxActive: 6,
+  maxRushActive: 10,
 };
 
 const els = {
   regionSelect: document.querySelector("#regionSelect"),
   startGame: document.querySelector("#startGame"),
   pauseGame: document.querySelector("#pauseGame"),
+  selectArea: document.querySelector("#selectArea"),
   courierCount: document.querySelector("#courierCount"),
   orders: document.querySelector("#orders"),
   prepList: document.querySelector("#prepList"),
@@ -228,7 +240,16 @@ function randomBetween(min, max) {
 }
 
 function scheduleNextOrder(from = performance.now()) {
-  state.nextOrderAt = from + randomBetween(orderSpawn.minDelay, orderSpawn.maxDelay);
+  if (from < state.rushUntil) {
+    state.nextOrderAt = from + randomBetween(orderSpawn.rushMinDelay, orderSpawn.rushMaxDelay);
+    return;
+  }
+  if (Math.random() < orderSpawn.rushChance) {
+    state.rushUntil = from + randomBetween(orderSpawn.minRushDuration, orderSpawn.maxRushDuration);
+    state.nextOrderAt = from + randomBetween(orderSpawn.rushMinDelay, orderSpawn.rushMaxDelay);
+    return;
+  }
+  state.nextOrderAt = from + randomBetween(orderSpawn.normalMinDelay, orderSpawn.normalMaxDelay);
 }
 
 function randomPoint(bounds, pad = 0) {
@@ -296,14 +317,16 @@ function clearLayerCollections() {
   for (const marker of state.markers.values()) marker.remove();
   for (const route of state.routes.values()) route.remove();
   if (state.regionLayer) state.regionLayer.remove();
+  if (state.selectionLayer) state.selectionLayer.remove();
   state.markers.clear();
   state.routes.clear();
   state.regionLayer = null;
+  state.selectionLayer = null;
 }
 
 function startGame() {
   clearLayerCollections();
-  const region = regions[els.regionSelect.value];
+  const region = state.customRegion || regions[els.regionSelect.value];
   state.running = true;
   state.paused = false;
   state.region = region;
@@ -324,20 +347,13 @@ function startGame() {
   state.orderSeq = 1;
   state.lastOrderAt = performance.now();
   state.nextOrderAt = state.lastOrderAt;
+  state.rushUntil = 0;
   state.prevTime = null;
   els.pauseGame.textContent = "Duraklat";
 
   map.setView(region.center, region.zoom);
   map.fitBounds(region.bounds, { padding: [30, 30] });
   refreshMapSize();
-  state.regionLayer = L.rectangle(region.bounds, {
-    color: "#2775d1",
-    weight: 1,
-    dashArray: "6 6",
-    fillOpacity: 0.015,
-  })
-    .addTo(map)
-    .bindTooltip("Operasyon bölgesi: siparişler bu sınır içinde oluşur.");
 
   state.markers.set(
     "depot",
@@ -440,6 +456,57 @@ function spawnOrder() {
   }
   state.markers.set(order.id, marker);
   hydrateOrderAddress(order);
+}
+
+function normalizeBounds(bounds) {
+  const south = Math.min(bounds.getSouth(), bounds.getNorth());
+  const north = Math.max(bounds.getSouth(), bounds.getNorth());
+  const west = Math.min(bounds.getWest(), bounds.getEast());
+  const east = Math.max(bounds.getWest(), bounds.getEast());
+  return [
+    [south, west],
+    [north, east],
+  ];
+}
+
+function beginAreaSelection() {
+  state.selectingArea = true;
+  state.selectionStart = null;
+  els.selectArea.textContent = "Alanı çiz";
+  els.selectArea.classList.add("active");
+  map.dragging.disable();
+  map.getContainer().classList.add("selecting-area");
+}
+
+function finishAreaSelection(bounds) {
+  const normalized = normalizeBounds(bounds);
+  const [[south, west], [north, east]] = normalized;
+  if (map.distance([south, west], [north, east]) < 250) {
+    cancelAreaSelection();
+    return;
+  }
+  const center = [(south + north) / 2, (west + east) / 2];
+  state.region = {
+    name: "Seçili alan",
+    center,
+    zoom: map.getZoom(),
+    bounds: normalized,
+  };
+  state.customRegion = state.region;
+  if (state.selectionLayer) state.selectionLayer.remove();
+  state.selectionLayer = null;
+  cancelAreaSelection();
+  startGame();
+  map.fitBounds(normalized, { padding: [22, 22] });
+}
+
+function cancelAreaSelection() {
+  state.selectingArea = false;
+  state.selectionStart = null;
+  els.selectArea.textContent = "Alan seç";
+  els.selectArea.classList.remove("active");
+  map.dragging.enable();
+  map.getContainer().classList.remove("selecting-area");
 }
 
 async function hydrateOrderAddress(order) {
@@ -548,8 +615,7 @@ function updateCourierRoute(courier) {
 
 function routePopup(courier) {
   const streetList = courier.routeNames.length ? courier.routeNames.join(" → ") : "Sokak bilgisi yok";
-  const mode = courier.illegalShortcut ? "Kaçak ara sokak kestirmesi" : courier.routeMode === "relaxed" ? "Moto esnek rota" : "Standart araç rotası";
-  return `<strong>${courier.name}</strong><br>${mode}<br>${Math.round(courier.routeDistance)} m · ETA ${courier.eta || "-"}s<br>${streetList}`;
+  return `<strong>${courier.name}</strong><br>${Math.round(courier.routeDistance)} m · ETA ${courier.eta || "-"}s<br>${streetList}`;
 }
 
 function removeRoute(id) {
@@ -673,7 +739,7 @@ async function requestRoute(url, mode) {
 }
 
 function maybeAddIllegalShortcut(route) {
-  if (route.path.length < 5 || Math.random() > 0.82) return route;
+  if (route.path.length < 5 || Math.random() > 0.72) return route;
   const fromIndex = Math.floor(randomBetween(1, Math.max(2, route.path.length - 4)));
   const toIndex = Math.min(route.path.length - 2, fromIndex + Math.floor(randomBetween(2, 5)));
   const from = route.path[fromIndex];
@@ -687,7 +753,7 @@ function maybeAddIllegalShortcut(route) {
     ...route,
     path,
     distance: routeDistance(path),
-    names: ["Kaçak ara sokak", ...route.names].slice(0, 4),
+    names: route.names,
     mode: "shortcut",
     illegalShortcut: true,
   };
@@ -723,6 +789,12 @@ function focusOrderOnMap(order) {
   const courier = state.couriers.find((item) => item.orderId === order.id);
   if (courier) selectCourier(courier.id);
   render();
+}
+
+function centerOrderOnMap(order) {
+  state.selectedOrderId = order.id;
+  map.setView(order.destination, Math.max(map.getZoom(), 17), { animate: true });
+  state.markers.get(order.id)?.openTooltip();
 }
 
 async function reverseGeocode(point) {
@@ -791,7 +863,10 @@ function selectOrder(id) {
   }
   state.editorMessage = "";
   state.editorRenderKey = "";
-  if (order?.status === "queued") openOrderPage(id);
+  if (order?.status === "queued") {
+    centerOrderOnMap(order);
+    openOrderPage(id);
+  }
   else if (order) focusOrderOnMap(order);
   render();
 }
@@ -952,7 +1027,8 @@ function tick(now) {
   const dt = Math.min(0.08, (now - state.prevTime) / 1000);
   state.prevTime = now;
 
-  if (now >= state.nextOrderAt && state.orders.length < orderSpawn.maxActive) {
+  const activeLimit = now < state.rushUntil ? orderSpawn.maxRushActive : orderSpawn.maxActive;
+  if (now >= state.nextOrderAt && state.orders.length < activeLimit) {
     spawnOrder();
     state.lastOrderAt = now;
     scheduleNextOrder(now);
@@ -1000,7 +1076,7 @@ function renderOrders() {
       <span class="item-meta">${order.district || state.region.name} · Kalan: ${remaining}s · Ürün: ${order.products.length} · Gelir: ₺${order.value}</span>
       <div class="bar"><span style="width: ${prepPercent}%"></span></div>
     `;
-    card.addEventListener("click", () => selectOrder(order.id));
+    activateOnTouch(card, () => selectOrder(order.id));
     if (order.status === "ready") {
       const actions = document.createElement("div");
       actions.className = "actions";
@@ -1269,7 +1345,6 @@ function renderCourierDetails() {
   els.courierDetails.className = "details";
   const order = state.orders.find((item) => item.id === courier.orderId);
   const routeName = courier.routeNames.length ? courier.routeNames.join(" → ") : "-";
-    const routeMode = courier.illegalShortcut ? "Kaçak ara sokak" : courier.routeMode === "relaxed" ? "Moto esnek rota" : courier.routeMode === "driving" ? "Araç rotası" : "-";
   els.courierDetails.innerHTML = `
     <div class="details-card">
       <div class="courier-swatch" style="--courier-color:${courier.color}"><span></span>${courier.name} rota rengi</div>
@@ -1277,7 +1352,6 @@ function renderCourierDetails() {
       <div class="detail-row"><span class="label">Durum</span><strong>${courierStatus(courier)}</strong></div>
       <div class="detail-row"><span class="label">Hız</span><strong>${Math.round(courier.speed * 3.6)} km/sa</strong></div>
       <div class="detail-row"><span class="label">Aktif sipariş</span><strong>${order ? `${order.id} · ${order.street}` : "-"}</strong></div>
-      <div class="detail-row"><span class="label">Rota tipi</span><strong>${routeMode}</strong></div>
       <div class="detail-row"><span class="label">Rota</span><strong>${routeName}</strong></div>
       <div class="detail-row"><span class="label">ETA</span><strong>${courier.eta ? `${courier.eta}s` : "-"}</strong></div>
       <div class="detail-row"><span class="label">Teslimat</span><strong>${courier.completed}</strong></div>
@@ -1295,11 +1369,46 @@ function courierStatus(courier) {
 }
 
 els.startGame.addEventListener("click", startGame);
+els.regionSelect.addEventListener("change", () => {
+  state.customRegion = null;
+});
+els.selectArea.addEventListener("click", () => {
+  if (state.selectingArea) cancelAreaSelection();
+  else beginAreaSelection();
+});
 els.pauseGame.addEventListener("click", () => {
   if (!state.running) return;
   state.paused = !state.paused;
   state.prevTime = null;
   els.pauseGame.textContent = state.paused ? "Devam" : "Duraklat";
+});
+map.on("mousedown", (event) => {
+  if (!state.selectingArea) return;
+  state.selectionStart = event.latlng;
+  if (state.selectionLayer) state.selectionLayer.remove();
+  state.selectionLayer = L.rectangle([event.latlng, event.latlng], {
+    color: "#11a579",
+    weight: 2,
+    dashArray: "6 6",
+    fillOpacity: 0.08,
+  }).addTo(map);
+});
+map.on("mousemove", (event) => {
+  if (!state.selectingArea || !state.selectionStart || !state.selectionLayer) return;
+  state.selectionLayer.setBounds(L.latLngBounds(state.selectionStart, event.latlng));
+});
+map.on("mouseup", (event) => {
+  if (!state.selectingArea || !state.selectionStart || !state.selectionLayer) return;
+  const bounds = L.latLngBounds(state.selectionStart, event.latlng);
+  finishAreaSelection(bounds);
+});
+map.on("mouseout", () => {
+  if (!state.selectingArea || !state.selectionStart) return;
+  cancelAreaSelection();
+  if (state.selectionLayer) {
+    state.selectionLayer.remove();
+    state.selectionLayer = null;
+  }
 });
 els.closeOrderPage.addEventListener("click", closeOrderPage);
 els.closeOrderPage.addEventListener(
