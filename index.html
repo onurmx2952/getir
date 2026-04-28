@@ -20,18 +20,12 @@
 
         <div class="controls">
           <label>
-            Bölge
-            <select id="regionSelect">
-              <option value="gop">Ankara GOP / Çankaya</option>
-              <option value="kizilay">Ankara Kızılay</option>
-              <option value="kadikoy">İstanbul Kadıköy</option>
-              <option value="besiktas">İstanbul Beşiktaş</option>
-              <option value="alsancak">İzmir Alsancak</option>
-            </select>
-          </label>
-          <label>
             Kurye
             <input id="courierCount" type="number" min="1" max="12" value="3" />
+          </label>
+          <label>
+            Hız
+            <input id="courierSpeed" type="number" min="10" max="120" value="70" />
           </label>
           <button id="startGame" type="button">Başlat</button>
           <button id="selectArea" class="ghost" type="button">Alan seç</button>
@@ -115,6 +109,7 @@
         <section class="shelf-panel">
           <div class="product-search">
             <input id="productSearch" type="search" placeholder="Ürün ara" autocomplete="off" />
+            <input id="searchQty" class="qty-input" type="number" min="1" max="20" value="1" aria-label="Adet" />
             <div id="searchResults" class="search-results" hidden></div>
           </div>
           <div id="categoryTabs" class="category-tabs"></div>

@@ -55,6 +55,8 @@ const state = {
   couriers: [],
   orders: [],
   prepQueue: [],
+  placePoints: [],
+  depotPoints: [],
   markers: new Map(),
   routes: new Map(),
   regionLayer: null,
@@ -99,11 +101,11 @@ const orderSpawn = {
 };
 
 const els = {
-  regionSelect: document.querySelector("#regionSelect"),
   startGame: document.querySelector("#startGame"),
   pauseGame: document.querySelector("#pauseGame"),
   selectArea: document.querySelector("#selectArea"),
   courierCount: document.querySelector("#courierCount"),
+  courierSpeed: document.querySelector("#courierSpeed"),
   orders: document.querySelector("#orders"),
   prepList: document.querySelector("#prepList"),
   money: document.querySelector("#money"),
@@ -129,6 +131,7 @@ const els = {
   subcategoryTabs: document.querySelector("#subcategoryTabs"),
   productGrid: document.querySelector("#productGrid"),
   productSearch: document.querySelector("#productSearch"),
+  searchQty: document.querySelector("#searchQty"),
   searchResults: document.querySelector("#searchResults"),
 };
 
@@ -260,6 +263,16 @@ function randomPoint(bounds, pad = 0) {
   ];
 }
 
+function randomFrom(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function boundedPointFrom(points, fallbackBounds, minDistanceFromDepot = 0) {
+  const usable = points.filter((point) => !state.depot || distanceMeters(point, state.depot) >= minDistanceFromDepot);
+  if (usable.length) return [...randomFrom(usable)];
+  return randomPoint(fallbackBounds, 0.0007);
+}
+
 function distanceMeters(a, b) {
   return map.distance(L.latLng(a), L.latLng(b));
 }
@@ -313,6 +326,51 @@ function normalizeSearchText(value) {
     .replace(/ı/g, "i");
 }
 
+function courierSpeedMetersPerSecond() {
+  const kmh = Math.max(10, Math.min(120, Number.parseFloat(els.courierSpeed.value) || 70));
+  els.courierSpeed.value = kmh;
+  return (kmh * randomBetween(0.9, 1.12)) / 3.6;
+}
+
+async function hydrateRegionPlaces(region) {
+  const [[south, west], [north, east]] = region.bounds;
+  const query = `
+    [out:json][timeout:15];
+    (
+      way["building"](${south},${west},${north},${east});
+      node["shop"](${south},${west},${north},${east});
+      way["shop"](${south},${west},${north},${east});
+      node["amenity"](${south},${west},${north},${east});
+      way["amenity"](${south},${west},${north},${east});
+    );
+    out center tags 900;
+  `;
+  try {
+    const response = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query });
+    if (!response.ok) throw new Error(`Overpass ${response.status}`);
+    const data = await response.json();
+    const placePoints = [];
+    const depotPoints = [];
+    for (const item of data.elements || []) {
+      const lat = item.lat ?? item.center?.lat;
+      const lon = item.lon ?? item.center?.lon;
+      if (typeof lat !== "number" || typeof lon !== "number") continue;
+      const point = [lat, lon];
+      const tags = item.tags || {};
+      if (tags.building) placePoints.push(point);
+      if (tags.shop || tags.amenity || ["commercial", "retail", "warehouse", "supermarket"].includes(tags.building)) {
+        depotPoints.push(point);
+      }
+    }
+    state.placePoints = placePoints;
+    state.depotPoints = depotPoints.length ? depotPoints : placePoints;
+  } catch (error) {
+    console.warn("OSM bina/işletme noktaları alınamadı, güvenli rastgele konuma düşüldü.", error);
+    state.placePoints = [];
+    state.depotPoints = [];
+  }
+}
+
 function clearLayerCollections() {
   for (const marker of state.markers.values()) marker.remove();
   for (const route of state.routes.values()) route.remove();
@@ -324,13 +382,16 @@ function clearLayerCollections() {
   state.selectionLayer = null;
 }
 
-function startGame() {
+async function startGame() {
   clearLayerCollections();
-  const region = state.customRegion || regions[els.regionSelect.value];
+  const region = state.customRegion || regions.gop;
   state.running = true;
   state.paused = false;
   state.region = region;
-  state.depot = randomPoint(region.bounds, 0.0015);
+  state.placePoints = [];
+  state.depotPoints = [];
+  await hydrateRegionPlaces(region);
+  state.depot = boundedPointFrom(state.depotPoints.length ? state.depotPoints : state.placePoints, region.bounds);
   state.couriers = [];
   state.orders = [];
   state.prepQueue = [];
@@ -371,7 +432,7 @@ function startGame() {
       name: `Kurye ${i + 1}`,
       status: "idle",
       pos: [...state.depot],
-      speed: randomBetween(7.5, 11.5),
+      speed: courierSpeedMetersPerSecond(),
       target: null,
       routePath: null,
       routeDistance: 0,
@@ -400,7 +461,7 @@ function startGame() {
 
 function spawnOrder() {
   if (!state.running) return;
-  const destination = randomPoint(state.region.bounds, 0.0007);
+  const destination = boundedPointFrom(state.placePoints, state.region.bounds, 160);
   if (distanceMeters(destination, state.depot) < 160) return spawnOrder();
   const requestedItems = createRandomTicket();
 
@@ -599,16 +660,14 @@ function updateCourierRoute(courier) {
     return;
   }
   const line = L.polyline(courier.routePath, {
-    color,
-    weight: 4,
-    opacity,
-    className: "route-line",
-  })
+      color,
+      weight: 4,
+      opacity,
+      className: "route-line",
+    })
     .addTo(map)
-    .bindTooltip(`${courier.name} rotası`)
     .on("click", () => {
       selectCourier(courier.id);
-      line.bindPopup(routePopup(courier)).openPopup();
     });
   state.routes.set(courier.id, line);
 }
@@ -784,8 +843,7 @@ function positionOnRoute(path, progress) {
 function focusOrderOnMap(order) {
   closeOrderPage();
   state.selectedOrderId = order.id;
-  map.setView(order.destination, Math.max(map.getZoom(), 17), { animate: true });
-  state.markers.get(order.id)?.openTooltip();
+  map.setView(order.destination, Math.max(map.getZoom(), 17));
   const courier = state.couriers.find((item) => item.orderId === order.id);
   if (courier) selectCourier(courier.id);
   render();
@@ -793,8 +851,7 @@ function focusOrderOnMap(order) {
 
 function centerOrderOnMap(order) {
   state.selectedOrderId = order.id;
-  map.setView(order.destination, Math.max(map.getZoom(), 17), { animate: true });
-  state.markers.get(order.id)?.openTooltip();
+  map.setView(order.destination, Math.max(map.getZoom(), 17));
 }
 
 async function reverseGeocode(point) {
@@ -936,7 +993,7 @@ function renderSearchResults() {
       <b>${product.priceText || `₺${product.price}`}</b>
     `;
     activateOnTouch(button, () => {
-      addProduct(order.id, product.id);
+      addProduct(order.id, product.id, els.searchQty.value);
       els.productSearch.value = "";
       els.searchResults.hidden = true;
       els.searchResults.innerHTML = "";
@@ -946,11 +1003,12 @@ function renderSearchResults() {
   }
 }
 
-function addProduct(orderId, productId) {
+function addProduct(orderId, productId, qty = 1) {
   const order = state.orders.find((item) => item.id === orderId);
   const product = catalog.find((item) => item.id === productId);
   if (!order || !product || order.status !== "queued") return;
-  order.products.push(product);
+  const count = Math.max(1, Math.min(20, Number.parseInt(qty, 10) || 1));
+  for (let i = 0; i < count; i += 1) order.products.push(product);
   state.editorMessage = "";
   state.editorRenderKey = "";
   state.markers.get(order.id)?.bindTooltip(`${order.id} · Sepette ${order.products.length} ürün`);
@@ -1085,10 +1143,15 @@ function renderOrders() {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = "Yola çıkar";
-        button.addEventListener("click", (event) => {
+        const dispatchFromButton = (event) => {
           event.stopPropagation();
           dispatchOrder(order.id);
-        });
+        };
+        button.addEventListener("click", dispatchFromButton);
+        button.addEventListener("touchend", (event) => {
+          event.preventDefault();
+          dispatchFromButton(event);
+        }, { passive: false });
         actions.append(button);
       } else {
         actions.innerHTML = '<span class="item-meta">Boş kurye bekleniyor.</span>';
@@ -1240,11 +1303,12 @@ function renderOrderEditor() {
       const product = catalog.find((candidate) => candidate.id === item.productId);
       const picked = counts[item.productId] || 0;
       const done = picked === item.qty ? "done" : picked > item.qty ? "over" : "";
+      const lineTotal = product.price * item.qty;
       return `
-        <li class="${done}">
+        <li class="${done}" data-ticket-product="${product.id}" data-ticket-missing="${Math.max(0, item.qty - picked)}">
           <img src="${product.image}" alt="" />
-          <span><strong>${product.name}</strong><small>${product.unit} · ${product.category} / ${product.subcategory || product.category}</small></span>
-          <b>${picked}/${item.qty}</b>
+          <span><strong>${product.name}</strong><small>${product.unit} · ${product.priceText || `₺${product.price}`} x ${item.qty}</small><em>${product.category} / ${product.subcategory || product.category}</em></span>
+          <b>${picked}/${item.qty}<small>₺${lineTotal.toFixed(2)}</small></b>
         </li>
       `;
     })
@@ -1277,6 +1341,13 @@ function renderOrderEditor() {
   els.basketList.innerHTML = basket;
   els.orderPageMessage.textContent = state.editorMessage;
   els.prepareOrder.textContent = actionText;
+
+  for (const line of els.ticketList.querySelectorAll("[data-ticket-product]")) {
+    activateOnTouch(line, () => {
+      const missing = Number.parseInt(line.dataset.ticketMissing, 10) || 0;
+      if (missing > 0) addProduct(order.id, line.dataset.ticketProduct, missing);
+    });
+  }
 
   for (const chip of els.basketList.querySelectorAll("[data-remove-product]")) {
     activateOnTouch(chip, () => removeProduct(order.id, chip.dataset.removeProduct));
@@ -1369,9 +1440,6 @@ function courierStatus(courier) {
 }
 
 els.startGame.addEventListener("click", startGame);
-els.regionSelect.addEventListener("change", () => {
-  state.customRegion = null;
-});
 els.selectArea.addEventListener("click", () => {
   if (state.selectingArea) cancelAreaSelection();
   else beginAreaSelection();

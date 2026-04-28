@@ -149,7 +149,7 @@ button.active {
 
 .game {
   display: grid;
-  grid-template-columns: 430px minmax(520px, 1fr) 310px;
+  grid-template-columns: 320px minmax(520px, 1fr) 260px;
   grid-template-areas: "orders map side";
   height: 100%;
   min-height: 0;
@@ -519,6 +519,7 @@ button.active {
   border-radius: 8px;
   padding: 6px;
   background: #fffdf7;
+  cursor: pointer;
 }
 
 .ticket-list li.done {
@@ -545,9 +546,25 @@ button.active {
   font-size: 11px;
 }
 
+.ticket-list em {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
 .ticket-list b {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
   color: var(--ink);
   font-size: 13px;
+}
+
+.ticket-list b small {
+  color: var(--accent-dark);
+  font-size: 11px;
 }
 
 .basket {
@@ -673,6 +690,9 @@ button.active {
 
 .product-search {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 68px;
+  gap: 8px;
   z-index: 3;
   padding-bottom: 10px;
   pointer-events: auto;
@@ -690,6 +710,11 @@ button.active {
   touch-action: manipulation;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.product-search .qty-input {
+  padding: 0 8px;
+  text-align: center;
 }
 
 .search-results {
@@ -1004,7 +1029,7 @@ button.active {
 
   .controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 82px repeat(2, auto);
+    grid-template-columns: 72px 82px repeat(3, auto);
     align-items: end;
     gap: 8px;
   }
@@ -1100,7 +1125,7 @@ button.active {
   }
 
   .controls {
-    grid-template-columns: 1fr 72px;
+    grid-template-columns: 1fr 1fr;
   }
 
   .controls button {
