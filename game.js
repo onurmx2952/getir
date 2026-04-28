@@ -69,6 +69,7 @@ const state = {
   missed: 0,
   orderSeq: 1,
   lastOrderAt: 0,
+  nextOrderAt: 0,
   prepSlots: 2,
   addressCache: new Map(),
 };
@@ -80,6 +81,11 @@ const routing = {
 };
 
 const routePalette = ["#0f7bff", "#ef476f", "#00a896", "#f77f00", "#7c5cc4", "#118ab2", "#2d6a4f", "#d00000", "#5f0f40", "#3a86ff", "#6a994e", "#9d4edd"];
+const orderSpawn = {
+  minDelay: 5000,
+  maxDelay: 60000,
+  maxActive: 6,
+};
 
 const els = {
   regionSelect: document.querySelector("#regionSelect"),
@@ -189,16 +195,16 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const depotIcon = L.divIcon({
   html: '<div class="depot-icon">D</div>',
   className: "",
-  iconSize: [30, 30],
-  iconAnchor: [15, 15],
+  iconSize: [46, 46],
+  iconAnchor: [23, 23],
 });
 
 function courierIcon(courier) {
   return L.divIcon({
-    html: `<div class="courier-icon" style="background:${courier.color}">${courier.id.replace("K", "")}</div>`,
+    html: `<div class="courier-icon" style="--courier-color:${courier.color}; --heading:${courier.heading || 0}deg; transform: rotate(${courier.heading || 0}deg);"><span>${courier.id.replace("K", "")}</span></div>`,
     className: "",
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
   });
 }
 
@@ -221,6 +227,10 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
+function scheduleNextOrder(from = performance.now()) {
+  state.nextOrderAt = from + randomBetween(orderSpawn.minDelay, orderSpawn.maxDelay);
+}
+
 function randomPoint(bounds, pad = 0) {
   const [[south, west], [north, east]] = bounds;
   return [
@@ -231,6 +241,15 @@ function randomPoint(bounds, pad = 0) {
 
 function distanceMeters(a, b) {
   return map.distance(L.latLng(a), L.latLng(b));
+}
+
+function bearingDegrees(from, to) {
+  const startLat = (from[0] * Math.PI) / 180;
+  const endLat = (to[0] * Math.PI) / 180;
+  const deltaLon = ((to[1] - from[1]) * Math.PI) / 180;
+  const y = Math.sin(deltaLon) * Math.cos(endLat);
+  const x = Math.cos(startLat) * Math.sin(endLat) - Math.sin(startLat) * Math.cos(endLat) * Math.cos(deltaLon);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
 function createRandomTicket() {
@@ -303,7 +322,8 @@ function startGame() {
   state.delivered = 0;
   state.missed = 0;
   state.orderSeq = 1;
-  state.lastOrderAt = performance.now() - 5000;
+  state.lastOrderAt = performance.now();
+  scheduleNextOrder(state.lastOrderAt);
   state.prevTime = null;
   els.pauseGame.textContent = "Duraklat";
 
@@ -342,6 +362,8 @@ function startGame() {
       routeProgress: 0,
       routeNames: [],
       routeMode: "",
+      illegalShortcut: false,
+      heading: 0,
       orderId: null,
       progress: 0,
       eta: 0,
@@ -357,7 +379,6 @@ function startGame() {
     state.markers.set(courier.id, marker);
   }
 
-  for (let i = 0; i < 3; i += 1) spawnOrder();
   render();
 }
 
@@ -429,14 +450,16 @@ function updateCouriers(dt) {
   for (const courier of state.couriers) {
     if (!courier.target) continue;
     if (!courier.routePath || courier.routePath.length < 2) continue;
+    const previousPos = courier.pos;
     courier.routeProgress += courier.speed * dt;
     courier.pos = positionOnRoute(courier.routePath, courier.routeProgress);
+    courier.heading = bearingDegrees(previousPos, courier.pos);
     courier.eta = Math.max(0, Math.ceil((courier.routeDistance - courier.routeProgress) / courier.speed));
     if (courier.routeProgress >= courier.routeDistance) {
       courier.pos = [...courier.target];
       handleCourierArrived(courier);
     }
-    state.markers.get(courier.id)?.setLatLng(courier.pos);
+    state.markers.get(courier.id)?.setLatLng(courier.pos).setIcon(courierIcon(courier));
   }
 }
 
@@ -463,6 +486,7 @@ function handleCourierArrived(courier) {
     courier.routeProgress = 0;
     courier.routeNames = [];
     courier.routeMode = "";
+    courier.illegalShortcut = false;
     courier.eta = 0;
     removeRoute(courier.id);
     dispatchNextReadyOrder();
@@ -496,7 +520,7 @@ function updateCourierRoute(courier) {
 
 function routePopup(courier) {
   const streetList = courier.routeNames.length ? courier.routeNames.join(" → ") : "Sokak bilgisi yok";
-  const mode = courier.routeMode === "relaxed" ? "Moto esnek rota" : "Standart araç rotası";
+  const mode = courier.illegalShortcut ? "Kaçak ara sokak kestirmesi" : courier.routeMode === "relaxed" ? "Moto esnek rota" : "Standart araç rotası";
   return `<strong>${courier.name}</strong><br>${mode}<br>${Math.round(courier.routeDistance)} m · ETA ${courier.eta || "-"}s<br>${streetList}`;
 }
 
@@ -548,24 +572,27 @@ async function startCourierRoute(courier, target, status) {
   courier.routeDistance = 0;
   courier.routeProgress = 0;
   courier.routeNames = [];
+  courier.routeMode = "";
+  courier.illegalShortcut = false;
   courier.eta = 0;
   removeRoute(courier.id);
   renderCourierDetails();
 
-  const route = await fetchRoute(courier.pos, target);
+  const route = await fetchRoute(courier.pos, target, { allowShortcut: status === "delivering" });
   if (!courier.target || distanceMeters(courier.target, target) > 2) return;
   courier.status = status;
   courier.routePath = route.path;
   courier.routeDistance = route.distance;
   courier.routeNames = route.names;
   courier.routeMode = route.mode;
+  courier.illegalShortcut = route.illegalShortcut;
   courier.routeProgress = 0;
   courier.eta = Math.ceil(route.distance / courier.speed);
   updateCourierRoute(courier);
   renderCourierDetails();
 }
 
-async function fetchRoute(from, to) {
+async function fetchRoute(from, to, options = {}) {
   const coords = `${from[1]},${from[0]};${to[1]},${to[0]}`;
   const params = `${coords}?overview=full&geometries=geojson&steps=true`;
   const attempts = [
@@ -575,18 +602,21 @@ async function fetchRoute(from, to) {
 
   for (const attempt of attempts) {
     try {
-      return await requestRoute(attempt.url, attempt.mode);
+      const route = await requestRoute(attempt.url, attempt.mode);
+      return options.allowShortcut ? maybeAddIllegalShortcut(route) : route;
     } catch (error) {
       console.warn("OSRM rota denemesi başarısız.", attempt.mode, error);
     }
   }
 
-  return {
+  const directRoute = {
     path: [from, to],
     distance: distanceMeters(from, to),
     names: [],
     mode: "direct",
+    illegalShortcut: true,
   };
+  return directRoute;
 }
 
 async function requestRoute(url, mode) {
@@ -610,6 +640,28 @@ async function requestRoute(url, mode) {
     distance: route.distance || routeDistance(path),
     names,
     mode,
+    illegalShortcut: false,
+  };
+}
+
+function maybeAddIllegalShortcut(route) {
+  if (route.path.length < 5 || Math.random() > 0.32) return route;
+  const fromIndex = Math.floor(randomBetween(1, Math.max(2, route.path.length - 4)));
+  const toIndex = Math.min(route.path.length - 2, fromIndex + Math.floor(randomBetween(2, 5)));
+  const from = route.path[fromIndex];
+  const to = route.path[toIndex];
+  const mid = [
+    (from[0] + to[0]) / 2 + randomBetween(-0.00035, 0.00035),
+    (from[1] + to[1]) / 2 + randomBetween(-0.00035, 0.00035),
+  ];
+  const path = [...route.path.slice(0, fromIndex + 1), mid, ...route.path.slice(toIndex)];
+  return {
+    ...route,
+    path,
+    distance: routeDistance(path),
+    names: ["Kaçak ara sokak", ...route.names].slice(0, 4),
+    mode: "shortcut",
+    illegalShortcut: true,
   };
 }
 
@@ -633,6 +685,16 @@ function positionOnRoute(path, progress) {
     walked += segment;
   }
   return [...path[path.length - 1]];
+}
+
+function focusOrderOnMap(order) {
+  closeOrderPage();
+  state.selectedOrderId = order.id;
+  map.setView(order.destination, Math.max(map.getZoom(), 17), { animate: true });
+  state.markers.get(order.id)?.openTooltip();
+  const courier = state.couriers.find((item) => item.orderId === order.id);
+  if (courier) selectCourier(courier.id);
+  render();
 }
 
 async function reverseGeocode(point) {
@@ -702,6 +764,7 @@ function selectOrder(id) {
   state.editorMessage = "";
   state.editorRenderKey = "";
   if (order?.status === "queued") openOrderPage(id);
+  else if (order) focusOrderOnMap(order);
   render();
 }
 
@@ -848,9 +911,10 @@ function tick(now) {
   const dt = Math.min(0.08, (now - state.prevTime) / 1000);
   state.prevTime = now;
 
-  if (now - state.lastOrderAt > randomBetween(9000, 15000) && state.orders.length < 9) {
+  if (now >= state.nextOrderAt && state.orders.length < orderSpawn.maxActive) {
     spawnOrder();
     state.lastOrderAt = now;
+    scheduleNextOrder(now);
   }
 
   updatePrep(dt);
@@ -1163,7 +1227,7 @@ function renderCourierDetails() {
   els.courierDetails.className = "details";
   const order = state.orders.find((item) => item.id === courier.orderId);
   const routeName = courier.routeNames.length ? courier.routeNames.join(" → ") : "-";
-  const routeMode = courier.routeMode === "relaxed" ? "Moto esnek rota" : courier.routeMode === "driving" ? "Araç rotası" : "-";
+    const routeMode = courier.illegalShortcut ? "Kaçak ara sokak" : courier.routeMode === "relaxed" ? "Moto esnek rota" : courier.routeMode === "driving" ? "Araç rotası" : "-";
   els.courierDetails.innerHTML = `
     <div class="details-card">
       <div class="courier-swatch" style="--courier-color:${courier.color}"><span></span>${courier.name} rota rengi</div>

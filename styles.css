@@ -144,11 +144,13 @@ button.ghost {
 .game {
   display: grid;
   grid-template-columns: 430px minmax(520px, 1fr) 310px;
+  grid-template-areas: "orders map side";
   height: 100%;
   min-height: 0;
 }
 
 #map {
+  grid-area: map;
   position: relative;
   width: 100%;
   height: 100%;
@@ -305,10 +307,12 @@ button.ghost {
 }
 
 .left-panel {
+  grid-area: orders;
   grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .right-panel {
+  grid-area: side;
   grid-template-rows: auto minmax(180px, 1fr) auto minmax(0, 0.9fr);
   border-right: 0;
   border-left: 1px solid var(--line);
@@ -857,7 +861,6 @@ button.ghost {
 }
 
 .depot-icon,
-.courier-icon,
 .order-icon {
   display: grid;
   place-items: center;
@@ -872,13 +875,39 @@ button.ghost {
 }
 
 .depot-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 9px;
   background: var(--accent);
+  font-size: 20px;
 }
 
 .courier-icon {
-  width: 24px;
-  height: 24px;
-  font-size: 11px;
+  position: relative;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  transform-origin: 50% 58%;
+}
+
+.courier-icon::before {
+  content: "";
+  position: absolute;
+  inset: 1px 4px 3px;
+  clip-path: polygon(50% 0%, 100% 100%, 50% 76%, 0% 100%);
+  background: var(--courier-color);
+  filter: drop-shadow(0 3px 7px rgb(0 0 0 / 32%));
+}
+
+.courier-icon span {
+  position: relative;
+  z-index: 1;
+  transform: rotate(calc(-1 * var(--heading, 0deg)));
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 55%);
 }
 
 .order-icon {
@@ -932,40 +961,177 @@ button.ghost {
 
 @media (max-width: 1100px) {
   .shell {
-    min-height: 0;
-    overflow: auto;
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: auto auto;
+    overflow: visible;
   }
 
   .topbar {
-    align-items: start;
+    align-items: stretch;
     flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 82px repeat(2, auto);
+    align-items: end;
+    gap: 8px;
+  }
+
+  select {
+    min-width: 0;
+    width: 100%;
   }
 
   .game {
     grid-template-columns: 1fr;
-    grid-template-rows: 260px 1fr 260px;
+    grid-template-rows: 46dvh auto auto;
+    grid-template-areas:
+      "map"
+      "orders"
+      "side";
+    height: auto;
+    min-height: 0;
   }
 
-  .order-overlay {
-    padding: 8px;
+  #map {
+    min-height: 360px;
   }
 
-  .order-page {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 42vh minmax(0, 1fr);
-  }
-
-  .ticket-panel {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+  .panel {
+    overflow: visible;
   }
 
   .left-panel,
   .right-panel {
     border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .list,
+  .list.small {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .order-overlay {
+    padding: 0;
+  }
+
+  .order-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 48dvh minmax(0, 1fr);
+    border-radius: 0;
+  }
+
+  .order-page-head {
+    align-items: start;
+    padding: 10px 12px;
+  }
+
+  .order-page-head h2 {
+    font-size: 15px;
+  }
+
+  .ticket-panel {
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .shelf-panel {
+    padding: 10px;
+  }
+
+  .product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 8px;
+  }
+
+  .product-grid button {
+    min-height: 152px;
+    padding: 7px;
+  }
+
+  .search-results {
+    grid-template-columns: 1fr;
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 640px) {
+  h1 {
+    font-size: 16px;
+  }
+
+  .brand p {
+    font-size: 11px;
+  }
+
+  .controls {
+    grid-template-columns: 1fr 72px;
+  }
+
+  .controls button {
+    width: 100%;
+  }
+
+  .game {
+    grid-template-rows: 44dvh auto auto;
   }
 
   #map {
-    min-height: 380px;
+    min-height: 300px;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .metrics div {
+    padding: 8px 6px;
+  }
+
+  .metrics strong {
+    font-size: 16px;
+  }
+
+  .order-page {
+    grid-template-rows: auto 52dvh minmax(0, 1fr);
+  }
+
+  .ticket-panel .basket {
+    max-height: 140px;
+  }
+
+  .ticket-list li {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+  }
+
+  .ticket-list img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .product-search input {
+    height: 40px;
+  }
+
+  .product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+
+  .product-grid button {
+    min-height: 146px;
+    font-size: 11px;
   }
 }
